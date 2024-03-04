@@ -59,7 +59,7 @@ class GarfieldPipeline(VanillaPipeline):
         
         model = model_registry[self.config.tap_model_type](checkpoint=self.config.tap_model_ckpt).cuda()
         model = model.to(device=self.config.device)
-        self.model.load_clip_scene(self.datamanager.img_group_model.model.predictor.model)
+        self.model.load_clip_scene(model)
 
     def get_train_loss_dict(self, step: int):
         """In addition to the base class, we also calculate SAM masks
