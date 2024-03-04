@@ -98,7 +98,7 @@ class GarfieldPipeline(VanillaPipeline):
         self.model.eval()
 
         # Calculate multi-scale masks, and their 3D scales
-        scales_3d_list, pixel_level_keys_list, group_cdf_list = [], [], []
+        scales_3d_list, pixel_level_keys_list, group_cdf_list, tap_sem_token_list = [], [], [], []
         train_cameras = self.datamanager.train_dataset.cameras
         for i in tqdm.trange(len(train_cameras), desc="Calculating 3D masks"):
             camera_ray_bundle = train_cameras.generate_rays(camera_indices=i).to(
@@ -118,6 +118,7 @@ class GarfieldPipeline(VanillaPipeline):
                 pixel_level_keys,
                 scale_3d,
                 group_cdf,
+                tap_sem_token
             ) = self.datamanager._calculate_3d_groups(
                 rgb, depth, points, max_scale=self.config.max_grouping_scale
             )
@@ -125,11 +126,12 @@ class GarfieldPipeline(VanillaPipeline):
             pixel_level_keys_list.append(pixel_level_keys)
             scales_3d_list.append(scale_3d)
             group_cdf_list.append(group_cdf)
+            tap_sem_token_list.append(tap_sem_token)
 
         # Save grouping data, and set it in the datamanager for current training.
         # This will be cached, so we don't need to calculate it again.
-        self.datamanager.save_sam_data(
-            pixel_level_keys_list, scales_3d_list, group_cdf_list
+        self.datamanager.save_tap_data(
+            pixel_level_keys_list, scales_3d_list, group_cdf_list, tap_sem_token_list
         )
         self.datamanager.pixel_level_keys = torch.nested.nested_tensor(
             pixel_level_keys_list

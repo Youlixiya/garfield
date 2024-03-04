@@ -137,6 +137,7 @@ class GarfieldModel(NerfactoModel):
         if self.training:
             outputs["instance_hash"] = hash_rendered  # normalized!
         outputs["instance"] = self.grouping_field.get_mlp(hash_rendered, instance_scales).float()
+        outputs["sem_token"] = self.grouping_field.get_semantic_mlp(hash_rendered, instance_scales).float()
 
         # If a click point is available, calculate the affinity between the click point and the scene.
         click_output = self.click_scene.get_outputs(outputs)
@@ -164,6 +165,13 @@ class GarfieldModel(NerfactoModel):
         if not self.training:
             return
 
+        unreduced_sem_token = torch.nn.functional.huber_loss(
+            outputs["sem_token"], batch["sem_token"], delta=1.25, reduction="none"
+        )
+        sem_token_loss = unreduced_sem_token.sum(dim=-1).nanmean()
+        # unreduced_dino = torch.nn.functional.mse_loss(outputs["dino"], batch["dino"], reduction="none")
+        # loss_dict["dino_loss"] = unreduced_dino.sum(dim=-1).nanmean()
+        
         loss_dict = {}
         margin = 1.0
 
@@ -240,7 +248,7 @@ class GarfieldModel(NerfactoModel):
         ).nansum()
         total_loss += instance_loss_4
 
-        loss_dict["instance_loss"] = total_loss / torch.sum(block_mask).float()
+        loss_dict["instance_loss"] = sem_token_loss + total_loss / torch.sum(block_mask).float()
 
         return loss_dict
 

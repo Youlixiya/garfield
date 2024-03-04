@@ -87,6 +87,17 @@ class GarfieldField(Field):
                 "n_hidden_layers": 4,
             },
         )
+        self.semantic_net = tcnn.Network(
+            n_input_dims=tot_out_dims + (0 if use_single_scale else 1),
+            n_output_dims=instance_n_dims,
+            network_config={
+                "otype": "CutlassMLP",
+                "activation": "ReLU",
+                "output_activation": "None",
+                "n_neurons": 256,
+                "n_hidden_layers": 4,
+            },
+        )
         self.quantile_transformer = None  # for scale normalization
 
     @staticmethod
@@ -153,3 +164,28 @@ class GarfieldField(Field):
 
         norms = instance_pass.norm(dim=-1, keepdim=True)
         return instance_pass / (norms + epsilon)
+    
+    def get_semantic_mlp(self, hash: TensorType, instance_scales: TensorType) -> TensorType:
+        """
+        Get the GARField affinity field outputs. Note that this is scale-conditioned.
+        This function *does* assume that the hash values are normalized.
+        The MLP output is normalized to unit length.
+        """
+        assert self.quantile_transformer is not None
+
+        # Check that # of rays is the same as # of scales
+        assert hash.shape[0] == instance_scales.shape[0]
+
+        # epsilon = 1e-5
+        if self.use_single_scale:
+            semantic_pass = self.semantic_net(hash)
+            return semantic_pass
+
+        scales = instance_scales.contiguous().view(-1, 1)
+
+        # Normalize scales before passing to MLP
+        scales = self.quantile_transformer(scales)
+        semantic_pass = self.semantic_net(torch.cat([hash, scales], dim=-1))
+
+        # norms = instance_pass.norm(dim=-1, keepdim=True)
+        return semantic_pass

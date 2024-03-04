@@ -18,17 +18,15 @@ from nerfstudio.configs import base_config as cfg
 class ImgGroupModelConfig(cfg.InstantiateConfig):
     _target: Type = field(default_factory=lambda: ImgGroupModel)
     """target class to instantiate"""
-    model_type: Literal["sam_fb", "sam_hf", "maskformer"] = "sam_fb"
+    model_type: Literal["tap"] = "tap"
     """
     Currently supports:
-     - "sam_fb": Original SAM model (from facebook github)
-     - "sam_hf": SAM model from huggingface
-     - "maskformer": MaskFormer model from huggingface (experimental)
+     - "tap": Original TAP model
     """
 
-    sam_model_type: str = ""
-    sam_model_ckpt: str = ""
-    sam_kwargs: dict = field(default_factory=lambda: {})
+    tap_model_type: str = ""
+    tap_model_ckpt: str = ""
+    tap_kwargs: dict = field(default_factory=lambda: {})
     "Arguments for SAM model (fb)."
 
     # # Settings used for the paper:
@@ -62,41 +60,17 @@ class ImgGroupModel:
     def __call__(self, img: np.ndarray):
         # takes in range 0-255... HxWx3
         # For using huggingface transformer's SAM model
-        if self.config.model_type == "sam_hf":
-            if self.model is None:
-                self.model = pipeline("mask-generation", model="facebook/sam-vit-huge", device=self.device)
-            img = Image.fromarray(img)
-            masks = self.model(img, points_per_side=32, pred_iou_thresh=0.90, stability_score_thresh=0.90)
-            masks = masks['masks']
-            masks = sorted(masks, key=lambda x: x.sum())
-            return masks
-        
-        elif self.config.model_type == "sam_fb":
+        if self.config.model_type == "tap":
             # For using the original SAM model
             if self.model is None:
-                from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
-                registry = sam_model_registry[self.config.sam_model_type]
-                model = registry(checkpoint=self.config.sam_model_ckpt)
+                from tokenize_anything import TapAutomaticMaskGenerator, model_registry
+                model = model_registry[self.config.tap_model_type](checkpoint=self.config.tap_model_ckpt).cuda()
                 model = model.to(device=self.config.device)
-                self.model = SamAutomaticMaskGenerator(
-                    model=model, **self.config.sam_kwargs
+                self.model = TapAutomaticMaskGenerator(model=model,
+                                                       **self.config.tap_kwargs
                 )
             masks = self.model.generate(img)
-            masks = [m['segmentation'] for m in masks] # already as bool
-            masks = sorted(masks, key=lambda x: x.sum())
-            return masks
-        
-        elif self.config.model_type == "maskformer":
-            # For using another model (e.g., MaskFormer)
-            if self.model is None:
-                self.model = pipeline(model="facebook/maskformer-swin-large-coco", device=self.device)
-            img = Image.fromarray(img)
-            masks = self.model(img)
-            masks = [
-                (np.array(m['mask']) != 0)
-                for m in masks
-            ]
-            masks = sorted(masks, key=lambda x: x.sum())
+            masks = [{'segmentation': m['segmentation'], 'caption': m['caption'], 'sem_token': m['sem_token']} for m in masks] # already as bool
+            masks = sorted(masks, key=lambda x: x['segmentation'].sum())
             return masks
 
-        raise NotImplementedError(f"Model type {self.config.model_type} not implemented")

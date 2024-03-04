@@ -11,6 +11,7 @@ dependencies=[
     "torch",
     "scikit-learn",
     "torchtyping",
+    "tokenize-anything @ git+https://github.com/Youlixiya/tokenize-anything",
     # "cuml",
 ]
 

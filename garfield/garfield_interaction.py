@@ -12,6 +12,7 @@ from nerfstudio.viewer.viewer_elements import *
 from nerfstudio.viewer.viewer import VISER_NERFSTUDIO_SCALE_RATIO
 
 from garfield.garfield_model import GarfieldModel
+from tokenize_anything.modeling.image_tokenizer import ImageTokenizer
 
 class GarfieldClickScene(nn.Module):
     """UI for clicking on a scene (visualized as spheres).
@@ -27,19 +28,27 @@ class GarfieldClickScene(nn.Module):
             self,
             device: torch.device,
             scale_handle: ViewerSlider,
+            tap_model: ImageTokenizer,
             model_handle: List[GarfieldModel]
         ):
         super().__init__()
         self.add_click_button: ViewerButton = ViewerButton(
             name="Click", cb_hook=self._add_click_cb
         )
+        # self.add_click_generate_caption_button: ViewerButton = ViewerButton(
+        #     name="Click Generate Caption", cb_hook=self._add_click_generate_caption_cb
+        # )
+        
         self.del_click_button: ViewerButton = ViewerButton(
             name="Reset Click", cb_hook=self._del_click_cb
         )
         self.viewer_control: ViewerControl = ViewerControl()
+        
+        self.gac_output = ViewerText("Generate Any Caption", "")
 
         self.scale_handle = scale_handle
         self.model_handle = model_handle
+        self.tap_model = tap_model
         self.scale_handle.cb_hook = self._update_scale_vis
 
         self._click_handle = None
@@ -56,6 +65,15 @@ class GarfieldClickScene(nn.Module):
             self.add_click_button.set_disabled(False)
             self.viewer_control.unregister_click_cb(del_handle_on_rayclick)
         self.viewer_control.register_click_cb(del_handle_on_rayclick)
+    
+    # def _add_click_generate_caption_cb(self, button: ViewerButton):
+    #     """Button press registers a click event, which will add a sphere.
+    #     Refer more to nerfstudio docs for more details. """
+    #     self.add_click_generate_caption_button.set_disabled(True)
+    #     def del_handle_on_rayclick(click: ViewerClick):
+    #         self.add_click_generate_caption_button.set_disabled(False)
+    #         self.viewer_control.unregister_click_cb(del_handle_on_rayclick)
+    #     self.viewer_control.register_click_cb(del_handle_on_rayclick)
 
     def _on_rayclick(self, click: ViewerClick):
         """On click, calculate the 3D position of the click and visualize it.
@@ -140,6 +158,8 @@ class GarfieldClickScene(nn.Module):
         x = torch.concat(xs, dim=-1)
         x = x / x.norm(dim=-1, keepdim=True)
         instance_pass = grouping_field.get_mlp(x, torch.tensor([instance_scale]).to(self.device).view(1, 1))
+        sem_token_pass = grouping_field.get_semantic_mlp(x, torch.tensor([instance_scale]).to(self.device).view(1, 1))
+        self.gac_output.value = str(self.tap_model.generate_text(sem_token_pass[None].half()))
 
         return {
             "instance_interact": torch.norm(outputs['instance'] - instance_pass.float(), p=2, dim=-1)
