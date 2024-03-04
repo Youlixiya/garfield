@@ -21,7 +21,7 @@ from garfield.garfield_field import (
     GarfieldField,
     GarfieldFieldConfig,
 )
-from garfield.garfield_interaction import GarfieldClickScene
+
 
 
 class FeatureRenderer(nn.Module):
@@ -78,6 +78,7 @@ class GarfieldModel(NerfactoModel):
         #     )
 
     def load_clip_scene(self, tap_model):
+        from garfield.garfield_interaction import GarfieldClickScene
         self.click_scene: GarfieldClickScene = GarfieldClickScene(
             device=("cuda" if torch.cuda.is_available() else "cpu"),
             scale_handle=self.scale_slider,
