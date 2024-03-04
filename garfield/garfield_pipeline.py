@@ -12,6 +12,8 @@ from sklearn.preprocessing import QuantileTransformer
 from garfield.garfield_datamanager import GarfieldDataManagerConfig, GarfieldDataManager
 from garfield.garfield_model import GarfieldModel, GarfieldModelConfig
 
+from tokenize_anything import TapAutomaticMaskGenerator, model_registry
+
 
 @dataclass
 class GarfieldPipelineConfig(VanillaPipelineConfig):
@@ -22,7 +24,8 @@ class GarfieldPipelineConfig(VanillaPipelineConfig):
 
     datamanager: GarfieldDataManagerConfig = GarfieldDataManagerConfig()
     model: GarfieldModelConfig = GarfieldModelConfig()
-
+    tap_model_type: str = ""
+    tap_model_ckpt: str = ""
     start_grouping_step: int = 2000
     max_grouping_scale: float = 2.0
     num_rays_per_image: int = 256
@@ -52,6 +55,10 @@ class GarfieldPipeline(VanillaPipeline):
             local_rank,
             grad_scaler,
         )
+        
+        
+        model = model_registry[self.config.tap_model_type](checkpoint=self.config.tap_model_ckpt).cuda()
+        model = model.to(device=self.config.device)
         self.model.load_clip_scene(self.datamanager.img_group_model.model.predictor.model)
 
     def get_train_loss_dict(self, step: int):

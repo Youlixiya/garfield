@@ -33,6 +33,8 @@ garfield_method = MethodSpecification(
         max_num_iterations=30000,
         mixed_precision=False,
         pipeline=GarfieldPipelineConfig(
+            tap_model_type='tap_vit_l',
+            tap_model_ckpt='ckpts/tap_vit_l_03f8ec.pkl',
             datamanager=GarfieldDataManagerConfig(
                 dataparser=NerfstudioDataParserConfig(train_split_fraction=0.99),
                 train_num_rays_per_batch=4096,
