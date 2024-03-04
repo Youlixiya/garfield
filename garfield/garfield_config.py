@@ -41,7 +41,9 @@ garfield_method = MethodSpecification(
                     num_rays_per_image=256,  # 4096/256 = 16 images per batch
                 ),
                 img_group_model=ImgGroupModelConfig(
-                    model_type="sam_hf",  
+                    model_type="sam_fb",  
+                    sam_model_type='vit_h',
+                    sam_model_ckpt='ckpts/sam_vit_h_4b8939.pth',
                     # Can choose out of "sam_fb", "sam_hf", "maskformer"
                     # Used sam_fb for the paper, see `img_group_model.py`. 
                     device="cuda",
