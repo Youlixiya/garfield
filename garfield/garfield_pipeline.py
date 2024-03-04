@@ -52,12 +52,13 @@ class GarfieldPipeline(VanillaPipeline):
             local_rank,
             grad_scaler,
         )
+        self.model.load_clip_scene(self.datamanager.img_group_model.model.predictor.model)
 
     def get_train_loss_dict(self, step: int):
         """In addition to the base class, we also calculate SAM masks
         and their 3D scales at `start_grouping_step`."""
         if step == self.config.start_grouping_step:
-            loaded = self.datamanager.load_sam_data()
+            loaded = self.datamanager.load_tap_data()
             if not loaded:
                 self.populate_grouping_info()
             else:

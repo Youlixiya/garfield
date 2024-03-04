@@ -21,6 +21,7 @@ from garfield.garfield_field import (
     GarfieldField,
     GarfieldFieldConfig,
 )
+from garfield.garfield_interaction import GarfieldClickScene
 
 
 class FeatureRenderer(nn.Module):
@@ -69,13 +70,20 @@ class GarfieldModel(NerfactoModel):
 
         # Store reference to click interface for GARField. 
         # Note the List[GarfieldModel] is to avoid circular children.
-        from garfield.garfield_interaction import GarfieldClickScene
+        
+        # self.click_scene: GarfieldClickScene = GarfieldClickScene(
+        #     device=("cuda" if torch.cuda.is_available() else "cpu"),
+        #     scale_handle=self.scale_slider,
+        #     model_handle=[self]
+        #     )
+
+    def load_clip_scene(self, tap_model):
         self.click_scene: GarfieldClickScene = GarfieldClickScene(
             device=("cuda" if torch.cuda.is_available() else "cpu"),
             scale_handle=self.scale_slider,
+            tap_model=tap_model,
             model_handle=[self]
             )
-
     def get_outputs(self, ray_bundle: RayBundle) -> Dict[str, TensorType]:
         outputs = super().get_outputs(ray_bundle)
 

@@ -7,7 +7,6 @@ from typing import Type, Union, Literal
 
 import torch
 import numpy as np
-from transformers import pipeline
 
 from PIL import Image
 
