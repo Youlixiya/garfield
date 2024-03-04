@@ -64,10 +64,12 @@ class ImgGroupModel:
             if self.model is None:
                 from tokenize_anything import TapAutomaticMaskGenerator, model_registry
                 model = model_registry[self.config.tap_model_type](checkpoint=self.config.tap_model_ckpt).cuda()
+                model.text_decoder.reset_cache(max_batch_size=1024)
                 model = model.to(device=self.config.device)
                 self.model = TapAutomaticMaskGenerator(model=model,
                                                        **self.config.tap_kwargs
                 )
+                
             masks = self.model.generate(img)
             masks = [{'segmentation': m['segmentation'], 'caption': m['caption'], 'sem_token': m['sem_token']} for m in masks] # already as bool
             masks = sorted(masks, key=lambda x: x['segmentation'].sum())
