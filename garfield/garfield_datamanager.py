@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from typing_extensions import TypeVar
-
+from PIL import Image
 import torch
 from nerfstudio.cameras.rays import RayBundle
 from nerfstudio.data.datasets.base_dataset import InputDataset
@@ -92,7 +92,7 @@ class GarfieldDataManager(VanillaDataManager):  # pylint: disable=abstract-metho
 
             tap_data = tap_data[prefix]
 
-            pixel_level_keys_list, scales_3d_list, group_cdf_list, tap_sem_token_list = [], [], [], []
+            pixel_level_keys_list, scales_3d_list, group_cdf_list, tap_sem_token_list, clip_embedding_list = [], [], [], [], []
 
             num_entries = len(tap_data["pixel_level_keys"].keys())
             for i in range(num_entries):
@@ -113,6 +113,12 @@ class GarfieldDataManager(VanillaDataManager):  # pylint: disable=abstract-metho
             self.tap_sem_token = torch.nested.nested_tensor(tap_sem_token_list)
             # self.scale_3d_statistics = torch.cat(scales_3d_list)
             del tap_sem_token_list
+            
+            for i in range(num_entries):
+                clip_embedding_list.append(torch.from_numpy(tap_data["clip_embedding"][str(i)][...]))
+            self.clip_embedding = torch.nested.nested_tensor(clip_embedding_list)
+            # self.scale_3d_statistics = torch.cat(scales_3d_list)
+            del clip_embedding_list
 
             for i in range(num_entries):
                 group_cdf_list.append(torch.from_numpy(tap_data["group_cdf"][str(i)][...]))
@@ -123,7 +129,7 @@ class GarfieldDataManager(VanillaDataManager):  # pylint: disable=abstract-metho
 
         return False
 
-    def save_tap_data(self, pixel_level_keys, scale_3d, group_cdf, tap_sem_token):
+    def save_tap_data(self, pixel_level_keys, scale_3d, group_cdf, tap_sem_token, clip_embedding):
         """Save the TAP caption data to hdf5."""
         prefix = self.img_group_model.config.model_type
         # make the directory if it doesn't exist
@@ -137,6 +143,7 @@ class GarfieldDataManager(VanillaDataManager):  # pylint: disable=abstract-metho
                 f.create_dataset(f"{prefix}/scale_3d/{i}", data=scale_3d[i])
                 f.create_dataset(f"{prefix}/group_cdf/{i}", data=group_cdf[i])
                 f.create_dataset(f"{prefix}/tap_sem_token/{i}", data=tap_sem_token[i])
+                f.create_dataset(f"{prefix}/clip_embedding/{i}", data=clip_embedding[i])
 
     # @staticmethod
     # def create_pixel_mask_array(masks: torch.Tensor):
@@ -195,6 +202,7 @@ class GarfieldDataManager(VanillaDataManager):  # pylint: disable=abstract-metho
         rgb: torch.Tensor,
         depth: torch.Tensor,
         point: torch.Tensor,
+        image_encoder,
         max_scale: float = 2.0,
     ):
         """
@@ -225,7 +233,9 @@ class GarfieldDataManager(VanillaDataManager):  # pylint: disable=abstract-metho
             return (pixel_level_keys, scale, mask_cdf)
 
         # Calculate SAM masks
-        masks = self.img_group_model((rgb.numpy() * 255).astype(np.uint8))
+        rgb_np = (rgb.numpy() * 255).astype(np.uint8)
+        rgb_pil = Image.fromarray(rgb_np)
+        masks = self.img_group_model(rgb_np)
 
         # If no masks are found, return dummy data.
         if len(masks) == 0:
@@ -253,7 +263,7 @@ class GarfieldDataManager(VanillaDataManager):  # pylint: disable=abstract-metho
             padding=1,
         )
         eroded_masks = (eroded_masks >= 5).squeeze(1)  # (num_masks, H, W)
-
+        clip_embeddings = []
         # 2) Calculate 3D scale
         # Don't include groups with scale > max_scale (likely to be too noisy to be useful)
         for i in range(len(masks)):
@@ -263,8 +273,12 @@ class GarfieldDataManager(VanillaDataManager):  # pylint: disable=abstract-metho
             extent = (curr_points.std(dim=0) * 2).norm()
             if extent.item() < max_scale:
                 tap_sem_token.append(all_sem_tokens[i])
-                tap_mask.append(curr_mask.reshape(image_shape))
+                curr_mask = curr_mask.reshape(image_shape)
+                tap_mask.append(curr_mask)
                 scale.append(extent.item())
+                mask_image_pil = Image.fromarray((curr_mask.cpu().numpy() * 255).astype(np.uint8))
+                clip_embedding = image_encoder.encode_image(rgb_pil, mask_image_pil)
+                clip_embeddings.append(clip_embedding)
 
         # If no masks are found, after postprocessing, return dummy data.
         if len(tap_mask) == 0:
@@ -273,6 +287,7 @@ class GarfieldDataManager(VanillaDataManager):  # pylint: disable=abstract-metho
         tap_mask = torch.stack(tap_mask)  # (num_masks, H, W)
         tap_sem_token = torch.stack(tap_sem_token)   # (num_masks, 256)
         scale = torch.Tensor(scale).view(-1, 1).to(self.device)  # (num_masks, 1)
+        clip_embeddings = torch.cat(clip_embeddings)
 
         # Calculate "pixel level keys", which is a 2D array of shape (H, W, max_masks)
         # Each pixel has a list of group indices that it belongs to, in order of increasing scale.
@@ -300,7 +315,7 @@ class GarfieldDataManager(VanillaDataManager):  # pylint: disable=abstract-metho
         mask_cdf = torch.cumsum(mask_log_probs, dim=-1)
         mask_cdf[never_masked] = 1.0
 
-        return (pixel_level_keys.cpu(), scale.cpu(), mask_cdf.cpu(), tap_sem_token.cpu())
+        return (pixel_level_keys.cpu(), scale.cpu(), mask_cdf.cpu(), tap_sem_token.cpu(), clip_embeddings.cpu())
 
     def next_group(self, ray_bundle: RayBundle, batch: Dict[str, Any]):
         """Returns the rays' mask and 3D scales for grouping.
@@ -323,6 +338,7 @@ class GarfieldDataManager(VanillaDataManager):  # pylint: disable=abstract-metho
         mask_id = torch.zeros((indices.shape[0],), device=self.device)
         scale = torch.zeros((indices.shape[0],), device=self.device)
         sem_token = torch.zeros((indices.shape[0], 256), device=self.device)
+        clip_embedding = torch.zeros((indices.shape[0], 512), device=self.device)
 
         random_vec_sampling = (torch.rand((1,)) * torch.ones((npximg,))).view(-1, 1)
         random_vec_densify = (torch.rand((1,)) * torch.ones((npximg,))).view(-1, 1)
@@ -357,6 +373,7 @@ class GarfieldDataManager(VanillaDataManager):  # pylint: disable=abstract-metho
 
             mask_id[i : i + npximg] = per_pixel_mask.to(self.device)
             sem_token[i: i + npximg] = self.tap_sem_token[img_idx][per_pixel_mask]
+            clip_embedding[i: i + npximg] = self.clip_embedding[img_idx][per_pixel_mask]
             # interval scale supervision
             curr_scale = self.scale_3d[img_idx][per_pixel_mask]
             curr_scale[random_index == 0] = (
@@ -378,6 +395,7 @@ class GarfieldDataManager(VanillaDataManager):  # pylint: disable=abstract-metho
 
         batch["mask_id"] = mask_id
         batch["sem_token"] = sem_token
+        batch["clip_embedding"] = clip_embedding
         batch["scale"] = scale
         batch["nPxImg"] = npximg
         ray_bundle.metadata["scale"] = batch["scale"]

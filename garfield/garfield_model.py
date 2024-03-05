@@ -174,8 +174,11 @@ class GarfieldModel(NerfactoModel):
         if not self.training:
             return
         mask = batch["mask_id"] != -1
+        # unreduced_sem_token = torch.nn.functional.huber_loss(
+        #     outputs["sem_token"][mask], batch["sem_token"][mask], delta=1.25, reduction="none"
+        # )
         unreduced_sem_token = torch.nn.functional.huber_loss(
-            outputs["sem_token"][mask], batch["sem_token"][mask], delta=1.25, reduction="none"
+            outputs["clip_embedding"][mask], batch["clip_embedding"][mask], delta=1.25, reduction="none"
         )
         sem_token_loss = unreduced_sem_token.sum(dim=-1).nanmean()
         # unreduced_dino = torch.nn.functional.mse_loss(outputs["dino"], batch["dino"], reduction="none")

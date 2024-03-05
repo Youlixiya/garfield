@@ -11,6 +11,7 @@ import tqdm
 from sklearn.preprocessing import QuantileTransformer
 from garfield.garfield_datamanager import GarfieldDataManagerConfig, GarfieldDataManager
 from garfield.garfield_model import GarfieldModel, GarfieldModelConfig
+from garfield.image_encoder import AlphaCLIPNetwork, AlphaCLIPNetworkConfig, OpenCLIPNetwork, OpenCLIPNetworkConfig
 
 from tokenize_anything import TapAutomaticMaskGenerator, model_registry
 
@@ -55,12 +56,13 @@ class GarfieldPipeline(VanillaPipeline):
             local_rank,
             grad_scaler,
         )
-        
+        self.image_encoder = AlphaCLIPNetwork(AlphaCLIPNetworkConfig())
         
         model = model_registry[self.config.tap_model_type](checkpoint=self.config.tap_model_ckpt).cuda()
         model = model.to(device='cuda')
         model.text_decoder.reset_cache(max_batch_size=1024)
         self.model.load_clip_scene(model)
+        self.model.image_encoder = self.image_encoder
 
     def get_train_loss_dict(self, step: int):
         """In addition to the base class, we also calculate SAM masks
@@ -107,7 +109,7 @@ class GarfieldPipeline(VanillaPipeline):
         self.model.eval()
 
         # Calculate multi-scale masks, and their 3D scales
-        scales_3d_list, pixel_level_keys_list, group_cdf_list, tap_sem_token_list = [], [], [], []
+        scales_3d_list, pixel_level_keys_list, group_cdf_list, tap_sem_token_list, clip_embedding_list = [], [], [], [], []
         train_cameras = self.datamanager.train_dataset.cameras
         for i in tqdm.trange(len(train_cameras), desc="Calculating 3D masks"):
             camera_ray_bundle = train_cameras.generate_rays(camera_indices=i).to(
@@ -127,27 +129,30 @@ class GarfieldPipeline(VanillaPipeline):
                 pixel_level_keys,
                 scale_3d,
                 group_cdf,
-                tap_sem_token
+                tap_sem_token,
+                clip_embedding
             ) = self.datamanager._calculate_3d_groups(
-                rgb, depth, points, max_scale=self.config.max_grouping_scale
+                rgb, depth, points, image_encoder=self.image_encoder, max_scale=self.config.max_grouping_scale
             )
 
             pixel_level_keys_list.append(pixel_level_keys)
             scales_3d_list.append(scale_3d)
             group_cdf_list.append(group_cdf)
             tap_sem_token_list.append(tap_sem_token)
+            clip_embedding_list.append(clip_embedding)
 
         # Save grouping data, and set it in the datamanager for current training.
         # This will be cached, so we don't need to calculate it again.
         self.datamanager.save_tap_data(
-            pixel_level_keys_list, scales_3d_list, group_cdf_list, tap_sem_token_list
+            pixel_level_keys_list, scales_3d_list, group_cdf_list, tap_sem_token_list, clip_embedding_list
         )
         self.datamanager.pixel_level_keys = torch.nested.nested_tensor(
             pixel_level_keys_list
         )
         self.datamanager.scale_3d = torch.nested.nested_tensor(scales_3d_list)
         self.datamanager.group_cdf = torch.nested.nested_tensor(group_cdf_list)
-        self.datamanager.tap_sem_token = torch._nested_tensor(tap_sem_token_list)
+        self.datamanager.tap_sem_token = torch.nested.nested_tensor(tap_sem_token_list)
+        self.datamanager.clip_embedding = torch.nested.nested_tensor(clip_embedding_list)
         # Initialize grouping statistics. This will be automatically loaded from a checkpoint next time.
         self.grouping_stats = torch.nn.Parameter(torch.cat(scales_3d_list))
         self.model.grouping_field.quantile_transformer = self._get_quantile_func(
