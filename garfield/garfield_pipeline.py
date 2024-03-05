@@ -58,7 +58,8 @@ class GarfieldPipeline(VanillaPipeline):
         
         
         model = model_registry[self.config.tap_model_type](checkpoint=self.config.tap_model_ckpt).cuda()
-        model = model.to(device=self.config.device)
+        model = model.to(device='cuda')
+        model.text_decoder.reset_cache(max_batch_size=1024)
         self.model.load_clip_scene(model)
 
     def get_train_loss_dict(self, step: int):
@@ -146,7 +147,7 @@ class GarfieldPipeline(VanillaPipeline):
         )
         self.datamanager.scale_3d = torch.nested.nested_tensor(scales_3d_list)
         self.datamanager.group_cdf = torch.nested.nested_tensor(group_cdf_list)
-
+        self.datamanager.tap_sem_token = torch._nested_tensor(tap_sem_token_list)
         # Initialize grouping statistics. This will be automatically loaded from a checkpoint next time.
         self.grouping_stats = torch.nn.Parameter(torch.cat(scales_3d_list))
         self.model.grouping_field.quantile_transformer = self._get_quantile_func(
