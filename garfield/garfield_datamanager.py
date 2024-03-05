@@ -252,6 +252,9 @@ class GarfieldDataManager(VanillaDataManager):  # pylint: disable=abstract-metho
             [torch.from_numpy(_["segmentation"]).to(self.device) for _ in masks]
             # [torch.from_numpy(_).to(self.device) for _ in masks]
         )
+        
+        all_bboxs = [_["bbox"] for _ in masks]
+
         all_sem_tokens = torch.stack(
             [torch.from_numpy(_["sem_token"]).to(self.device) for _ in masks]
             # [torch.from_numpy(_).to(self.device) for _ in masks]
@@ -276,9 +279,15 @@ class GarfieldDataManager(VanillaDataManager):  # pylint: disable=abstract-metho
                 curr_mask = curr_mask.reshape(image_shape)
                 tap_mask.append(curr_mask)
                 scale.append(extent.item())
-                mask_image_pil = Image.fromarray((curr_mask.cpu().numpy() * 255).astype(np.uint8))
-                clip_embedding = image_encoder.encode_image(rgb_pil, mask_image_pil)
+                image = rgb_np.copy()
+                image[all_masks[i].cpu()==0] = np.array([0, 0,  0], dtype=np.uint8)
+                x,y,w,h = np.int32(all_bboxs[i])
+                seg_img = Image.fromarray(image[y:y+h, x:x+w, ...])
+                clip_embedding = image_encoder.encode_image(seg_img)
                 clip_embeddings.append(clip_embedding)
+                # mask_image_pil = Image.fromarray((curr_mask.cpu().numpy() * 255).astype(np.uint8))
+                # clip_embedding = image_encoder.encode_image(rgb_pil, mask_image_pil)
+                # clip_embeddings.append(clip_embedding)
 
         # If no masks are found, after postprocessing, return dummy data.
         if len(tap_mask) == 0:

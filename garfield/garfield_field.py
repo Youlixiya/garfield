@@ -35,6 +35,7 @@ class GarfieldFieldConfig(InstantiateConfig):
     """The field class to instantiate."""
 
     n_instance_dims: int = 256
+    n_clip_dims: int = 512
     hashgrid_cfg: Dict[str, Any] = field(
         default_factory=lambda: {
             "resolution_range": [(16, 256), (256, 2048)],
@@ -61,6 +62,7 @@ class GarfieldField(Field):
         self.use_single_scale = self.config.use_single_scale
         hashgrid_cfg = self.config.hashgrid_cfg
         instance_n_dims = self.config.n_instance_dims
+        clip_n_dims = self.config.n_clip_dims
         use_single_scale = self.config.use_single_scale
 
         # This is a trick to make the hashgrid encoding work with the TCNN library.
@@ -89,12 +91,12 @@ class GarfieldField(Field):
         )
         self.semantic_net = tcnn.Network(
             n_input_dims=tot_out_dims + (0 if use_single_scale else 1),
-            n_output_dims=instance_n_dims,
+            n_output_dims=clip_n_dims,
             network_config={
                 "otype": "CutlassMLP",
                 "activation": "ReLU",
                 "output_activation": "None",
-                "n_neurons": 512,
+                "n_neurons": 256,
                 "n_hidden_layers": 4,
             },
         )

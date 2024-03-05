@@ -11,7 +11,8 @@ dependencies=[
     "torch",
     "scikit-learn",
     "torchtyping",
-    "open-clip-torch"
+    "open-clip-torch",
+    # "alpha-clip @ git+https://github.com/SunzeY/AlphaCLIP",
     # "tokenize-anything @ git+https://github.com/Youlixiya/tokenize-anything",
     # "cuml",
 ]

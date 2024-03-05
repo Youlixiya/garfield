@@ -146,7 +146,8 @@ class GarfieldModel(NerfactoModel):
         if self.training:
             outputs["instance_hash"] = hash_rendered  # normalized!
         outputs["instance"] = self.grouping_field.get_mlp(hash_rendered, instance_scales).float()
-        outputs["sem_token"] = self.grouping_field.get_semantic_mlp(hash_rendered, instance_scales).float()
+        # outputs["sem_token"] = self.grouping_field.get_semantic_mlp(hash_rendered, instance_scales).float()
+        outputs["clip_embedding"] = self.grouping_field.get_semantic_mlp(hash_rendered, instance_scales).float()
 
         # If a click point is available, calculate the affinity between the click point and the scene.
         click_output = self.click_scene.get_outputs(outputs)
@@ -178,7 +179,7 @@ class GarfieldModel(NerfactoModel):
         #     outputs["sem_token"][mask], batch["sem_token"][mask], delta=1.25, reduction="none"
         # )
         unreduced_sem_token = torch.nn.functional.huber_loss(
-            outputs["clip_embedding"][mask], batch["clip_embedding"][mask], delta=1.25, reduction="none"
+            outputs["clip_embedding"][mask], batch["clip_embedding"][mask].float(), delta=1.25, reduction="none"
         )
         sem_token_loss = unreduced_sem_token.sum(dim=-1).nanmean()
         # unreduced_dino = torch.nn.functional.mse_loss(outputs["dino"], batch["dino"], reduction="none")
@@ -301,4 +302,11 @@ class GarfieldModel(NerfactoModel):
                 outputs[output_name] = torch.cat(outputs_list).view(image_height, image_width, -1)  # type: ignore
             except:
                 pass
+        
+        if len(self.image_encoder.positives) > 0 and 'clip_embedding' in outputs.keys():
+            clip_embedding = outputs['clip_embedding']
+            h, w = clip_embedding.shape[:2]
+            for i in range(len(self.image_encoder.positives)):
+                relevancy_map = self.image_encoder.get_relevancy(clip_embedding.reshape(-1, 512), i)[..., 0].reshape(h, w, 1)
+                outputs[f'relevancy_map_{i}'] = relevancy_map
         return outputs

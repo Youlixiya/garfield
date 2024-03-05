@@ -56,7 +56,8 @@ class GarfieldPipeline(VanillaPipeline):
             local_rank,
             grad_scaler,
         )
-        self.image_encoder = AlphaCLIPNetwork(AlphaCLIPNetworkConfig())
+        # self.image_encoder = AlphaCLIPNetwork(AlphaCLIPNetworkConfig())
+        self.image_encoder = OpenCLIPNetwork(OpenCLIPNetworkConfig)
         
         model = model_registry[self.config.tap_model_type](checkpoint=self.config.tap_model_ckpt).cuda()
         model = model.to(device='cuda')

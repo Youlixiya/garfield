@@ -71,7 +71,7 @@ class ImgGroupModel:
                 )
                 
             masks = self.model.generate(img)
-            masks = [{'segmentation': m['segmentation'], 'caption': m['caption'], 'sem_token': m['sem_token']} for m in masks] # already as bool
+            masks = [{'segmentation': m['segmentation'], 'caption': m['caption'], 'sem_token': m['sem_token'], 'bbox': m['bbox']} for m in masks] # already as bool
             masks = sorted(masks, key=lambda x: x['segmentation'].sum())
             return masks
 
